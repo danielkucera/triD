@@ -8,11 +8,13 @@ import android.graphics.Color;
 import android.hardware.Camera;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.text.format.Time;
+import android.util.FloatMath;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -61,8 +63,9 @@ public class MainActivity extends ActionBarActivity {
     int picTaken;
     int toTake;
     EditText editAngle;
-    FileWriter fw;
-
+    int mode;
+    int center;
+    int[][] rawData;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,6 +97,10 @@ public class MainActivity extends ActionBarActivity {
                         mCamera.autoFocus(myAutoFocusCallback);
 //                        refColor = bitmap.getPixel(5, 5);
 //                        text.append(String.format("#%06X", refColor));
+                        picTaken = 0;
+                        toTake = 1;
+                        mode = 2;
+                        mCamera.takePicture(null, null, mPicture);
                     }
                 }
         );
@@ -104,21 +111,10 @@ public class MainActivity extends ActionBarActivity {
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        // get an image from the camera
-                        Time now = new Time();
-                        now.setToNow();
-
-                        File file = new File("/sdcard/triD/", "object-" + now.format2445().toString() + ".txt");
-                        Log.d("file", file.getAbsolutePath());
-                        try {
-                            file.createNewFile();
-                            fw = new FileWriter(file.getAbsoluteFile());
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-
                         picTaken = 0;
                         toTake = Integer.parseInt(editAngle.getText().toString());
+                        rawData = new int[toTake][mCamera.getParameters().getPictureSize().height];
+                        mode = 1;
                         mCamera.takePicture(null, null, mPicture);
                     }
                 }
@@ -271,12 +267,16 @@ public class MainActivity extends ActionBarActivity {
 
                 picTaken++;
 
-                text.setText("pic#: " + picTaken + "\nsize: " +b.getInt("size")/1024 + "kB\nprocessing took " + b.getFloat("took") + "\n");
+                text.setText("pic#: " + picTaken + "\nsize: " +b.getInt("size")/1024 + "kB\nprocessing took " + b.getFloat("took") + "\n" + "center: " + center + "\n");
 
                 capture.setImageBitmap(processed);
 
                 if (picTaken < toTake) {
                     mCamera.takePicture(null, null, mPicture);
+                } else {
+
+                    saveXYZ();
+
                 }
 
             }
@@ -300,16 +300,45 @@ public class MainActivity extends ActionBarActivity {
 
         //text.setText("image size: " + bitmap.getWidth() + "x" + bitmap.getHeight() + "\n");
 
-        long start = System.nanoTime();
-
-        int[][] lines = new int[5][bitmap.getHeight()];
-
         int h = bitmap.getHeight();
         int w = bitmap.getWidth();
 
         int [] pixels = new int[w * h];
 
         bitmap.getPixels(pixels, 0, w, 0, 0, w, h);
+
+        switch (mode){
+            case 1:
+                processData(w, h, pixels);
+                break;
+            case 2:
+                center = findCenter(w, h, pixels);
+                break;
+        }
+
+
+    }
+
+    private int findCenter(int w, int h, int[] pixels){
+
+        int intensMax = 0;
+        int maxPos = 0;
+        for (int x=0; x < w; x++) {
+
+            int intens = intensity(pixels[w * (h / 2) + x]);
+
+            if ((intens > intensMax)) {
+                intensMax = intens;
+                maxPos = x;
+            }
+        }
+
+        return maxPos;
+    }
+
+    private void processData(int w, int h, int[] pixels){
+
+        long start = System.nanoTime();
 
         for (int y=0; y < h; y++){
             int intensMax = 0;
@@ -318,50 +347,21 @@ public class MainActivity extends ActionBarActivity {
                 int intens = intensity(pixels[w*y + x]);
 
                 if ( (intens > intensMax ) ) {
-                    lines[0][y] = x;
+                    rawData[picTaken][y] = x;
                     intensMax = intens;
                 }
 
             }
 
-                Message msg = new Message();
-                Bundle b = new Bundle();
-                b.putFloat("elapsed", (float) (y + 1) / h);
-                msg.setData(b);
-                // send message to the handler with the current message handler
-                processHandler.sendMessage(msg);
+            Message msg = new Message();
+            Bundle b = new Bundle();
+            b.putFloat("elapsed", (float) (y + 1) / h);
+            msg.setData(b);
+            // send message to the handler with the current message handler
+            processHandler.sendMessage(msg);
 
         }
 
-            bitmap.eraseColor(Color.WHITE);
-
-        int center = bitmap.getWidth()/2;
-
-
-        for (int y=0; y<bitmap.getHeight(); y++){
-
-            try {
-                fw.append(lines[0][y]+";");
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            for (int x=lines[0][y]; x< w && x < lines[0][y] + 50; x++){
-                bitmap.setPixel(x, y, Color.RED);
-            }
-        }
-
-        try {
-            fw.append("\n");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        //bitmap.setPixel(5, 5, 0xffff0000);
-
-//            text.append("color" + bitmap.getPixel(1,1));
-
-        processed = bitmap;
 
         float elapsedTime = System.nanoTime() - start;
         float base = 1000000000;
@@ -372,12 +372,76 @@ public class MainActivity extends ActionBarActivity {
         Bundle b = new Bundle();
         b.putFloat("elapsed", 1);
         b.putBoolean("processed", true);
-        b.putInt("size", data.length);
         b.putFloat("took", elapsedTime/base);
         msg.setData(b);
         // send message to the handler with the current message handler
         processHandler.sendMessage(msg);
+    }
 
+    private void showPreview(){
+        /*
+        bitmap.eraseColor(Color.WHITE);
+
+        int center = bitmap.getWidth()/2;
+
+        for (int y=0; y<bitmap.getHeight(); y++){
+
+            for (int x=rawData[0][y]; x< w && x < rawData[0][y] + 50; x++){
+                bitmap.setPixel(x, y, Color.RED);
+            }
+        }
+
+        processed = bitmap;
+*/
+    }
+
+    private void saveXYZ() {
+
+        FileOutputStream outputStream;
+
+        Time now = new Time();
+        now.setToNow();
+
+        String filename = "object-" + now.format2445().toString() + ".txt";
+
+        String root = Environment.getExternalStorageDirectory().toString();
+        File myDir = new File(root + "/triD");
+        myDir.mkdirs();
+
+        File file = new File(myDir, filename);
+        try {
+            outputStream = new FileOutputStream(file);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        int h = bitmap.getHeight();
+
+        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);
+
+        for (int img = 0; img < toTake; img++){
+
+            float angle = (float) (img * 2 * 3.14 / 45);
+            float sinA = FloatMath.sin(angle);
+            float cosA = FloatMath.cos(angle);
+
+
+            for (int y = 0; y < h; y++) {
+                try {
+                    outputStream.write((cosA * (center - rawData[img][y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData[img][y]) * captureCoef + "\n").getBytes());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+
+        try {
+            outputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private Camera.PictureCallback mPicture = new Camera.PictureCallback() {

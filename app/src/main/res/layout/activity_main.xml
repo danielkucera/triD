@@ -96,7 +96,7 @@
                     android:ems="10"
                     android:id="@+id/editAngles"
                     android:layout_gravity="center_horizontal"
-                    android:text="365" />
+                    android:text="45" />
 
             </LinearLayout>
 
