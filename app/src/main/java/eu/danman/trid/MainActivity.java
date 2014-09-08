@@ -88,22 +88,29 @@ public class MainActivity extends ActionBarActivity {
 
         editAngle = (EditText) findViewById(R.id.editAngles);
 
-        Button referButton = (Button) findViewById(R.id.button_reference);
+        drawOverlay();
+
+        Button referButton = (Button) findViewById(R.id.button_focus);
         referButton.setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         // get an image from the camera
                         mCamera.autoFocus(myAutoFocusCallback);
-//                        refColor = bitmap.getPixel(5, 5);
-//                        text.append(String.format("#%06X", refColor));
-                        picTaken = 0;
-                        toTake = 1;
-                        mode = 2;
-                        mCamera.takePicture(null, null, mPicture);
                     }
                 }
         );
+
+        Button saveTRIButton = (Button) findViewById(R.id.button_saveTRI);
+        referButton.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        saveTRI();
+                    }
+                }
+        );
+
 
         // Add a listener to the Capture button
         Button captureButton = (Button) findViewById(R.id.button_capture);
@@ -189,6 +196,27 @@ public class MainActivity extends ActionBarActivity {
         FrameLayout preview = (FrameLayout) findViewById(R.id.camera_preview);
         preview.addView(mPreview);
 
+
+    }
+
+    private void drawOverlay(){
+        //TODO: spravne rozmery
+//        int h = iv.getMeasuredHeight();
+//        int w = iv.getMeasuredWidth();
+        int h = 240;
+        int w = 320;
+
+        ImageView previewOverlay = (ImageView) findViewById(R.id.imageView2);
+
+        Log.d("bitmap overlay", "width " + w + " height " + h);
+
+        Bitmap overlay = Bitmap.createBitmap(w,h, Bitmap.Config.ARGB_8888);
+
+        for (int i=0; i< h; i++){
+            overlay.setPixel((int)(w / 2),i, Color.WHITE);
+        }
+
+        previewOverlay.setImageBitmap(overlay);
 
     }
 
@@ -312,7 +340,7 @@ public class MainActivity extends ActionBarActivity {
                 processData(w, h, pixels);
                 break;
             case 2:
-                center = findCenter(w, h, pixels);
+//                center = findCenter(w, h, pixels);
                 break;
         }
 
@@ -349,6 +377,9 @@ public class MainActivity extends ActionBarActivity {
                 if ( (intens > intensMax ) ) {
                     rawData[picTaken][y] = x;
                     intensMax = intens;
+                    if (intens > 254){
+                        x = w;
+                    }
                 }
 
             }
@@ -402,7 +433,56 @@ public class MainActivity extends ActionBarActivity {
         Time now = new Time();
         now.setToNow();
 
-        String filename = "object-" + now.format2445().toString() + ".txt";
+        String filename = "object-" + now.format2445().toString() + ".xyz";
+
+        String root = Environment.getExternalStorageDirectory().toString();
+        File myDir = new File(root + "/triD");
+        myDir.mkdirs();
+
+        File file = new File(myDir, filename);
+        try {
+            outputStream = new FileOutputStream(file);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        int h = bitmap.getHeight();
+
+        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);
+
+        for (int img = 0; img < toTake; img++){
+
+            float angle = (float) (img * 2 * 3.14 / 45);
+            float sinA = FloatMath.sin(angle);
+            float cosA = FloatMath.cos(angle);
+
+
+            for (int y = 0; y < h; y++) {
+                try {
+                    outputStream.write((cosA * (center - rawData[img][y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData[img][y]) * captureCoef + "\n").getBytes());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+
+        try {
+            outputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveTRI() {
+
+        FileOutputStream outputStream;
+
+        Time now = new Time();
+        now.setToNow();
+
+        String filename = "object-" + now.format2445().toString() + ".tri";
 
         String root = Environment.getExternalStorageDirectory().toString();
         File myDir = new File(root + "/triD");

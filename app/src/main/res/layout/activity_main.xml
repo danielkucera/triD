@@ -25,15 +25,34 @@
             android:layout_alignEnd="@+id/imageView"
             android:layout_alignParentStart="false">
 
-            <FrameLayout
-                android:id="@+id/camera_preview"
+            <RelativeLayout
                 android:layout_width="fill_parent"
                 android:layout_height="fill_parent"
-                android:layout_toLeftOf="@+id/textView"
-                android:layout_above="@+id/imageView"
                 android:layout_weight="1">
 
-            </FrameLayout>
+                <FrameLayout
+                    android:id="@+id/camera_preview"
+                    android:layout_width="fill_parent"
+                    android:layout_height="fill_parent"
+                    android:layout_toLeftOf="@+id/textView"
+                    android:layout_above="@+id/imageView"
+                    android:layout_weight="1"
+                    android:layout_alignParentLeft="true"
+                    android:layout_marginLeft="0dp"
+                    android:layout_alignParentTop="true"
+                    android:layout_marginTop="0dp">
+
+                </FrameLayout>
+
+                <ImageView
+                    android:layout_width="fill_parent"
+                    android:layout_height="fill_parent"
+                    android:id="@+id/imageView2"
+                    android:layout_alignParentLeft="true"
+                    android:layout_marginLeft="0dp"
+                    android:layout_alignParentTop="true"
+                    android:layout_marginTop="0dp" />
+            </RelativeLayout>
 
             <LinearLayout
                 android:orientation="vertical"
@@ -112,6 +131,18 @@
             android:gravity="right">
 
             <Button
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Save tri"
+                android:id="@+id/button_saveTRI" />
+
+            <Button
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Save XYZ"
+                android:id="@+id/button_saveXYZ" />
+
+            <Button
                 android:id="@+id/button_capture"
                 android:text="Capture"
                 android:layout_width="wrap_content"
@@ -130,8 +161,8 @@
             <Button
                 android:layout_width="93dp"
                 android:layout_height="wrap_content"
-                android:text="Refer"
-                android:id="@+id/button_reference"
+                android:text="Focus"
+                android:id="@+id/button_focus"
                 android:layout_gravity="bottom" />
         </LinearLayout>
 
