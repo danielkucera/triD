@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.hardware.Camera;
 import android.media.AudioManager;
+import android.media.MediaScannerConnection;
 import android.media.ToneGenerator;
 import android.os.Environment;
 import android.os.Handler;
@@ -34,12 +35,19 @@ import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Array;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 
 import static android.graphics.Color.blue;
 import static android.graphics.Color.green;
@@ -54,7 +62,6 @@ public class MainActivity extends ActionBarActivity {
     private CameraPreview mPreview;
     private ImageView capture;
     private int refColor = 0xffff0000;
-    private Bitmap bitmap;
     private Spinner resolutionView;
     private String[] resolutions;
     List<Camera.Size> sizes;
@@ -64,8 +71,10 @@ public class MainActivity extends ActionBarActivity {
     int toTake;
     EditText editAngle;
     int mode;
-    int center;
-    int[][] rawData;
+
+    List<Integer[]> rawData;
+    int width;
+    int angle;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,8 +99,8 @@ public class MainActivity extends ActionBarActivity {
 
         drawOverlay();
 
-        Button referButton = (Button) findViewById(R.id.button_focus);
-        referButton.setOnClickListener(
+        Button focusButton = (Button) findViewById(R.id.button_focus);
+        focusButton.setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -101,12 +110,34 @@ public class MainActivity extends ActionBarActivity {
                 }
         );
 
+
         Button saveTRIButton = (Button) findViewById(R.id.button_saveTRI);
-        referButton.setOnClickListener(
+        saveTRIButton.setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         saveTRI();
+                    }
+                }
+        );
+
+        Button loadTRIButton = (Button) findViewById(R.id.button_loadTRI);
+        loadTRIButton.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        loadTRI(new File("/sdcard/triD/","object-last.tri"));
+                    }
+                }
+        );
+
+
+        Button saveXYZButton = (Button) findViewById(R.id.button_saveXYZ);
+        saveXYZButton.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        saveXYZ();
                     }
                 }
         );
@@ -120,7 +151,7 @@ public class MainActivity extends ActionBarActivity {
                     public void onClick(View v) {
                         picTaken = 0;
                         toTake = Integer.parseInt(editAngle.getText().toString());
-                        rawData = new int[toTake][mCamera.getParameters().getPictureSize().height];
+                        rawData = new ArrayList<Integer[]>();
                         mode = 1;
                         mCamera.takePicture(null, null, mPicture);
                     }
@@ -134,6 +165,16 @@ public class MainActivity extends ActionBarActivity {
                     public void onClick(View v) {
                         // get an image from the camera
                         toTake = picTaken;
+                    }
+                }
+        );
+
+        Button medianButton = (Button) findViewById(R.id.button_median);
+        medianButton.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        filterMedian(5);
                     }
                 }
         );
@@ -210,7 +251,7 @@ public class MainActivity extends ActionBarActivity {
 
         Log.d("bitmap overlay", "width " + w + " height " + h);
 
-        Bitmap overlay = Bitmap.createBitmap(w,h, Bitmap.Config.ARGB_8888);
+        Bitmap overlay = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
 
         for (int i=0; i< h; i++){
             overlay.setPixel((int)(w / 2),i, Color.WHITE);
@@ -295,7 +336,7 @@ public class MainActivity extends ActionBarActivity {
 
                 picTaken++;
 
-                text.setText("pic#: " + picTaken + "\nsize: " +b.getInt("size")/1024 + "kB\nprocessing took " + b.getFloat("took") + "\n" + "center: " + center + "\n");
+                text.setText("pic#: " + picTaken + "\nsize: " +b.getInt("size")/1024 + "kB\nprocessing took " + b.getFloat("took") + "\n" );
 
                 capture.setImageBitmap(processed);
 
@@ -303,7 +344,7 @@ public class MainActivity extends ActionBarActivity {
                     mCamera.takePicture(null, null, mPicture);
                 } else {
 
-                    saveXYZ();
+                    ///saveXYZ();
 
                 }
 
@@ -313,6 +354,8 @@ public class MainActivity extends ActionBarActivity {
     };
 
     private void processImage(byte[] data){
+
+        Bitmap bitmap;
 
         final ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100);
         tg.startTone(ToneGenerator.TONE_PROP_BEEP);
@@ -330,6 +373,10 @@ public class MainActivity extends ActionBarActivity {
 
         int h = bitmap.getHeight();
         int w = bitmap.getWidth();
+
+        Log.d("bitmap", "size is: "+ data.length);
+
+        width = w;
 
         int [] pixels = new int[w * h];
 
@@ -366,38 +413,38 @@ public class MainActivity extends ActionBarActivity {
 
     private void processData(int w, int h, int[] pixels){
 
+        Log.d("pixels", "value: "+ pixels[(int)(3264*1224.5)]);
+
         long start = System.nanoTime();
 
-        for (int y=0; y < h; y++){
+        Integer rawFrame[];
+
+        rawFrame = new Integer[h];
+
+        for (int y=0; y < h; y++) {
             int intensMax = 0;
-            for (int x=0; x < w; x++){
+            for (int x = 0; x < w; x++) {
 
-                int intens = intensity(pixels[w*y + x]);
+                int intens = intensity(pixels[w * y + x]);
 
-                if ( (intens > intensMax ) ) {
-                    rawData[picTaken][y] = x;
+                if ((intens > intensMax)) {
+                    rawFrame[y] = x;
                     intensMax = intens;
-                    if (intens > 254){
+                    if (intens > 254) {
                         x = w;
                     }
                 }
 
             }
-
-            Message msg = new Message();
-            Bundle b = new Bundle();
-            b.putFloat("elapsed", (float) (y + 1) / h);
-            msg.setData(b);
-            // send message to the handler with the current message handler
-            processHandler.sendMessage(msg);
-
         }
 
+        rawData.add(rawFrame);
+
+        Log.d("rawFrame", "center val: "+ rawFrame[1224]);
+        Log.d("rawData", "len: " + rawData.size());
 
         float elapsedTime = System.nanoTime() - start;
         float base = 1000000000;
-
-        //mCamera.takePicture(null, null, mPicture);
 
         Message msg = new Message();
         Bundle b = new Bundle();
@@ -436,6 +483,7 @@ public class MainActivity extends ActionBarActivity {
         String filename = "object-" + now.format2445().toString() + ".xyz";
 
         String root = Environment.getExternalStorageDirectory().toString();
+//        String root = "/storage";
         File myDir = new File(root + "/triD");
         myDir.mkdirs();
 
@@ -447,20 +495,27 @@ public class MainActivity extends ActionBarActivity {
             return;
         }
 
-        int h = bitmap.getHeight();
+        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);  //TODO: uhol
 
-        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);
+        int h = rawData.get(0).length;
+        int center = width/2;
+        int frames = rawData.size();
+        Integer rawFrame[];
 
-        for (int img = 0; img < toTake; img++){
+        Log.d("save xyz", "h: " + h + " frames: " + frames);
 
-            float angle = (float) (img * 2 * 3.14 / 45);
+
+        for (int frame = 0; frame < frames; frame++){
+
+            rawFrame = rawData.get(frame);
+
+            float angle = (float) (frame * 2 * 3.14 / frames);
             float sinA = FloatMath.sin(angle);
             float cosA = FloatMath.cos(angle);
 
-
             for (int y = 0; y < h; y++) {
                 try {
-                    outputStream.write((cosA * (center - rawData[img][y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData[img][y]) * captureCoef + "\n").getBytes());
+                    outputStream.write((cosA * (center - rawData.get(frame)[y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData.get(frame)[y]) * captureCoef + "\n").getBytes());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -473,18 +528,26 @@ public class MainActivity extends ActionBarActivity {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()}, null, null);
+
+        Toast.makeText(this, "file " + filename + " saved!", Toast.LENGTH_SHORT).show();
+
     }
 
     private void saveTRI() {
 
         FileOutputStream outputStream;
+        ByteBuffer b = ByteBuffer.allocate(4);
 
         Time now = new Time();
         now.setToNow();
 
-        String filename = "object-" + now.format2445().toString() + ".tri";
+//        String filename = "object-" + now.format2445().toString() + ".tri";
+        String filename = "object-last.tri";
 
         String root = Environment.getExternalStorageDirectory().toString();
+//        String root = "/storage";
         File myDir = new File(root + "/triD");
         myDir.mkdirs();
 
@@ -496,20 +559,43 @@ public class MainActivity extends ActionBarActivity {
             return;
         }
 
-        int h = bitmap.getHeight();
+        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);  //TODO: uhol
 
-        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);
+        int h = rawData.get(0).length;
+        int center = width/2;
+        int frames = rawData.size();
+        Integer rawFrame[];
 
-        for (int img = 0; img < toTake; img++){
+        Log.d("save xyz", "h: " + h + " frames: " + frames);
 
-            float angle = (float) (img * 2 * 3.14 / 45);
-            float sinA = FloatMath.sin(angle);
-            float cosA = FloatMath.cos(angle);
 
+        try {
+            b.clear();
+            b.putInt(width);
+            outputStream.write(b.array());
+
+            b.clear();
+            b.putInt(h);
+            outputStream.write(b.array());
+
+            b.clear();
+            b.putInt(frames);
+            outputStream.write(b.array());
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        for (int frame = 0; frame < frames; frame++){
+
+            rawFrame = rawData.get(frame);
 
             for (int y = 0; y < h; y++) {
+                b.clear();
+                b.putInt(rawFrame[y].intValue());
+
                 try {
-                    outputStream.write((cosA * (center - rawData[img][y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData[img][y]) * captureCoef + "\n").getBytes());
+                    outputStream.write(b.array());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -522,7 +608,66 @@ public class MainActivity extends ActionBarActivity {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()}, null, null);
+
+        Toast.makeText(this, "file " + filename + " saved!", Toast.LENGTH_SHORT).show();
+
     }
+
+    private void loadTRI(File file) {
+
+        FileInputStream inputStream;
+        ByteBuffer b = ByteBuffer.allocate(4);
+        byte bArr[] = new byte[4];
+
+        rawData = new ArrayList<Integer[]>();
+
+        try {
+            inputStream = new FileInputStream(file);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        try {
+            inputStream.read(bArr, 0, 4);
+            width = ByteBuffer.wrap(bArr).getInt();
+
+            inputStream.read(bArr, 0, 4);
+            int h = ByteBuffer.wrap(bArr).getInt();
+
+            inputStream.read(bArr, 0, 4);
+            int frames = ByteBuffer.wrap(bArr).getInt();
+
+
+            for (int frame=0; frame < frames; frame++){
+                Integer rawFrame[] = new Integer[h];
+
+                for (int y=0; y < h; y++){
+                    inputStream.read(bArr, 0, 4);
+                    rawFrame[y] = ByteBuffer.wrap(bArr).getInt();
+                }
+
+                rawData.add(rawFrame);
+
+            }
+            Log.d("loaded", "h: " + h + " frames: " + frames);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            inputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        Toast.makeText(this, "file loaded!", Toast.LENGTH_SHORT).show();
+
+    }
+
 
     private Camera.PictureCallback mPicture = new Camera.PictureCallback() {
 
@@ -539,6 +684,36 @@ public class MainActivity extends ActionBarActivity {
 
         }
     };
+
+    private void filterMedian(int grade){
+        List<Integer[]> newRawData = new ArrayList<Integer[]>();
+        Integer[] newRawFrame;
+        Integer[] sortBuff = new Integer[grade];
+        int median = grade/2 + 1;
+
+        Log.d("filter","median: " + median);
+
+        for (Integer[] rawFrame : rawData){
+
+            newRawFrame = new Integer[rawFrame.length-grade];
+
+            for(int y=0; y < rawFrame.length - grade; y++){
+
+                for(int x=0; x < grade; x++){
+                    sortBuff[x] = rawFrame[x+y];
+                }
+
+                Arrays.sort(sortBuff);
+
+                newRawFrame[y] = sortBuff[median];
+            }
+
+            newRawData.add(newRawFrame);
+        }
+
+        rawData = newRawData;
+
+    }
 
 
     private int similarToRef(int color1){
