@@ -156,16 +156,23 @@
                 android:layout_gravity="bottom" />
         </LinearLayout>
 
-        <Button
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="median"
-            android:id="@+id/button_median" />
-
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"></LinearLayout>
+            android:layout_height="wrap_content">
+
+            <Button
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="median"
+                android:id="@+id/button_median" />
+
+            <Button
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Save STL"
+                android:id="@+id/button_saveSTL" />
+        </LinearLayout>
 
     </LinearLayout>
 

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.hardware.Camera;
 import android.media.AudioManager;
 import android.media.MediaScannerConnection;
@@ -33,6 +34,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -73,6 +75,7 @@ public class MainActivity extends ActionBarActivity {
     int mode;
 
     List<Integer[]> rawData;
+    List<List<triPoint>> pointData;
     int width;
     int angle;
 
@@ -174,10 +177,21 @@ public class MainActivity extends ActionBarActivity {
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        filterMedian(5);
+                        filterMedian2(5);
                     }
                 }
         );
+
+        Button saveSTL = (Button) findViewById(R.id.button_saveSTL);
+        saveSTL.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        saveSTL();
+                    }
+                }
+        );
+
 
 
         Boolean hasCamera = checkCameraHardware(this.getApplicationContext());
@@ -456,6 +470,46 @@ public class MainActivity extends ActionBarActivity {
         processHandler.sendMessage(msg);
     }
 
+    void generatePoints(){
+
+        pointData = new ArrayList<List<triPoint>>(rawData.size());
+
+        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);  //TODO: uhol
+
+        int h = rawData.get(0).length;
+        int center = width/2;
+        int frames = rawData.size();
+        Integer rawFrame[];
+
+        Log.d("generate points", "h: " + h + " frames: " + frames);
+
+
+        for (int frame = 0; frame < frames; frame++){
+
+            List<triPoint> pointFrame = new ArrayList<triPoint>(h);
+
+            rawFrame = rawData.get(frame);
+
+            float angle = (float) (frame * 2 * 3.14 / frames);
+            float sinA = FloatMath.sin(angle);
+            float cosA = FloatMath.cos(angle);
+
+            for (int y = 0; y < h; y++) {
+                double xP = cosA * (center - rawData.get(frame)[y]) * captureCoef;
+                double yP = (h - y);
+                double zP =  sinA * (center - rawData.get(frame)[y]) * captureCoef;
+                triPoint point = new triPoint(xP, yP, zP);
+
+                pointFrame.add(point);
+            }
+
+            pointData.add(pointFrame);
+
+        }
+
+
+    }
+
     private void showPreview(){
         /*
         bitmap.eraseColor(Color.WHITE);
@@ -475,7 +529,9 @@ public class MainActivity extends ActionBarActivity {
 
     private void saveXYZ() {
 
-        FileOutputStream outputStream;
+        generatePoints();
+
+        BufferedOutputStream outputStream;
 
         Time now = new Time();
         now.setToNow();
@@ -489,38 +545,115 @@ public class MainActivity extends ActionBarActivity {
 
         File file = new File(myDir, filename);
         try {
-            outputStream = new FileOutputStream(file);
+            outputStream = new BufferedOutputStream(new FileOutputStream(file));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
             return;
         }
 
-        float captureCoef = 1/FloatMath.sin((float)(3.14/180)*30);  //TODO: uhol
-
-        int h = rawData.get(0).length;
-        int center = width/2;
-        int frames = rawData.size();
-        Integer rawFrame[];
-
-        Log.d("save xyz", "h: " + h + " frames: " + frames);
+        Log.d("save xyz", "start");
 
 
-        for (int frame = 0; frame < frames; frame++){
+        for (List<triPoint> pointFrame : pointData){
 
-            rawFrame = rawData.get(frame);
-
-            float angle = (float) (frame * 2 * 3.14 / frames);
-            float sinA = FloatMath.sin(angle);
-            float cosA = FloatMath.cos(angle);
-
-            for (int y = 0; y < h; y++) {
+            for (triPoint point : pointFrame){
                 try {
-                    outputStream.write((cosA * (center - rawData.get(frame)[y]) * captureCoef + " " + (h - y) + " " + sinA * (center - rawData.get(frame)[y]) * captureCoef + "\n").getBytes());
+                    outputStream.write((point.getX() + " " + point.getY() + " " + point.getZ() + "\n").getBytes());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
 
+        }
+
+        try {
+            outputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()}, null, null);
+
+        Toast.makeText(this, "file " + filename + " saved!", Toast.LENGTH_SHORT).show();
+
+    }
+
+    private void saveSTL() {
+
+        BufferedOutputStream outputStream;
+
+        generatePoints();
+
+        Time now = new Time();
+        now.setToNow();
+
+        String filename = "object-" + now.format2445().toString() + ".stl";
+
+        String root = Environment.getExternalStorageDirectory().toString();
+//        String root = "/storage";
+        File myDir = new File(root + "/triD");
+        myDir.mkdirs();
+
+        File file = new File(myDir, filename);
+        try {
+            outputStream = new BufferedOutputStream(new FileOutputStream(file));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
+
+
+        Log.d("save stl", " frames: " );
+
+        try {
+
+            outputStream.write(("solid object\n").getBytes());
+
+            for (int frame = 0; frame < pointData.size() - 1; frame++){
+
+                List<triPoint> pointFrame = pointData.get(frame);
+                List<triPoint> pointFrame2 = pointData.get(frame+1);
+
+                for (int y = 0; y < pointFrame.size() - 1; y++) {
+
+                    triPoint a = pointFrame.get(y);
+                    triPoint b = pointFrame2.get(y);
+                    triPoint c = pointFrame.get(y + 1);
+                    triPoint d = pointFrame2.get(y + 1);
+
+                    // A B
+                    // C D
+
+                    outputStream.write(("facet normal 0 0 0\n").getBytes());
+                    outputStream.write(("outer loop\n").getBytes());
+
+                    outputStream.write(("vertex " + a.getX() + " " + a.getY() + " " + a.getZ() + "\n").getBytes());
+                    outputStream.write(("vertex " + b.getX() + " " + b.getY() + " " + b.getZ() + "\n").getBytes());
+                    outputStream.write(("vertex " + c.getX() + " " + c.getY() + " " + c.getZ() + "\n").getBytes());
+
+                    outputStream.write(("endloop\n").getBytes());
+                    outputStream.write(("endfacet\n").getBytes());
+
+                    //<
+                    outputStream.write(("facet normal 0 0 0\n").getBytes());
+                    outputStream.write(("outer loop\n").getBytes());
+
+
+                    outputStream.write(("vertex " + b.getX() + " " + b.getY() + " " + b.getZ() + "\n").getBytes());
+                    outputStream.write(("vertex " + c.getX() + " " + c.getY() + " " + c.getZ() + "\n").getBytes());
+                    outputStream.write(("vertex " + d.getX() + " " + d.getY() + " " + d.getZ() + "\n").getBytes());
+
+                    outputStream.write(("endloop\n").getBytes());
+                    outputStream.write(("endfacet\n").getBytes());
+
+                }
+
+            }
+
+            outputStream.write(("endsolid object\n").getBytes());
+
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
         try {
@@ -712,6 +845,38 @@ public class MainActivity extends ActionBarActivity {
         }
 
         rawData = newRawData;
+
+    }
+
+    private void filterMedian2(int grade){
+        List<Integer[]> newRawData = new ArrayList<Integer[]>();
+        Integer[] newRawFrame;
+        Integer[] sortBuff = new Integer[grade];
+        int median = grade/2;
+
+        Log.d("filter","median2: " + median);
+
+        for (Integer[] rawFrame : rawData){
+
+            newRawFrame = new Integer[rawFrame.length/(median)];
+
+            for(int y=0; y < rawFrame.length - grade; y+= median){
+
+                for(int x=0; x < grade; x++){
+                    sortBuff[x] = rawFrame[x+y];
+                }
+
+                Arrays.sort(sortBuff);
+
+                newRawFrame[y] = sortBuff[median];
+            }
+
+            newRawData.add(newRawFrame);
+        }
+
+        rawData = newRawData;
+
+        Log.d("filter","median2 end");
 
     }
 
